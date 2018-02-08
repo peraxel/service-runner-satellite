@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Scanner;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -39,7 +40,9 @@ import org.glassfish.jersey.jackson.JacksonFeature;
 @Singleton
 @Startup
 public class Runner {
-
+        static final int DEFAULT_INITIAL_HEAP_SIZE = 512;
+        static final int DEFAULT_MAX_HEAP_SIZE = 512;
+        
 	private static final Logger LOG = Logger.getLogger(Runner.class.getName());
 
 	@Resource(name = "props/service-runner-satellite")
@@ -142,6 +145,9 @@ public class Runner {
 			Path artifact = getDeploymentArtifact(deploymentName);
 			List<String> libraryArtifacts = new ArrayList<>();
 			
+                        Integer initialHeapSize = deployment.isNull("initialHeapSize") ? DEFAULT_INITIAL_HEAP_SIZE : deployment.getInt("initialHeapSize");
+                        Integer maxHeapSize = deployment.isNull("maxHeapSize") ? DEFAULT_MAX_HEAP_SIZE : deployment.getInt("maxHeapSize");
+                        
 			if (!deployment.isNull("libraryIds")) {
 				for(JsonString lid : deployment.getJsonArray("libraryIds").getValuesAs(JsonString.class)) {
 					libraryArtifacts.add(getLibraryArtifact(lid.getString()).toString());
@@ -157,7 +163,8 @@ public class Runner {
 			String httpsPort = "--sslport " + deployment.getInt("httpsPort");
 			
 			String prebootCommandsFileString = "";
-			
+			String hzConfigFileString = "";
+                        
 			if (!deployment.isNull("serviceProperties")) {
 				JsonObject sProps = deployment.getJsonObject("serviceProperties");
 				Map<String,String> props = new HashMap<>();
@@ -173,8 +180,37 @@ public class Runner {
 				Files.write(prebootCommandsFile, prebootCommands.getBytes());
 				prebootCommandsFileString = "--prebootcommandfile " + prebootCommandsFile.toString();
 			}
-			
-			String command = String.format("/usr/bin/java -Xmx256m -Xms256m -Dse.felth.deployment=%s -jar %s --deploy %s %s --logtofile /tmp/%s.log %s %s %s", deploymentName, srsProps.get("payara-micro-path"), artifact.toString(), addJars, deploymentName, httpPort, httpsPort, prebootCommandsFileString);
+                        
+                        if (!deployment.isNull("enableHz") && deployment.getBoolean("enableHz")) {
+                            String hzTemplate = new Scanner(getClass().getClassLoader().getResourceAsStream("hzconfig-template.xml")).next("\\Z");
+                            JsonObject hzConfiguration = deployment.getJsonObject("hzConfiguration");
+                            int hzPort = hzConfiguration.getInt("port");
+                            String members = deployment.getJsonArray("servers")
+                                    .stream()
+                                    .map(s -> String.format("<member>%s:%d</member>", ((JsonObject)s).getString("name"), hzPort))
+                                    .collect(Collectors.joining("\n"));
+                            
+                            String hzConfigContent = hzTemplate.replace("#HZPORT#", String.valueOf(hzPort)).replace("#HZMEMBERS#", members);
+                            Path hzConfigFile = Paths.get("/tmp", UUID.randomUUID().toString());
+                            Files.write(hzConfigFile, hzConfigContent.getBytes());
+                            hzConfigFileString = "--hzconfigfile " + hzConfigFile.toString();
+                        }
+			List<String> commandParts = new ArrayList<>();
+                        commandParts.add("/usr/bin/java");
+                        commandParts.add(String.format("-Xmx%dm", maxHeapSize));
+                        commandParts.add(String.format("-Xms%dm", initialHeapSize));
+                        commandParts.add(String.format("-Dse.felth.deployment", deploymentName));
+                        commandParts.add(srsProps.get("payara-micro-path").toString());
+                        commandParts.add(artifact.toString());
+                        commandParts.add(addJars);
+                        commandParts.add(String.format("--logtofile /tmp/%s.log", deploymentName));
+                        commandParts.add(httpPort);
+                        commandParts.add(httpsPort);
+                        commandParts.add(prebootCommandsFileString);
+                        commandParts.add(hzConfigFileString);
+                        
+                        String command = String.join(" ", commandParts);
+                        
 			LOG.info(command);
 			Process process = Runtime.getRuntime().exec(command);
 			
