@@ -31,6 +31,11 @@ public class RunningDeployment {
 	public void setDeploymentName(String deploymentName) {
 		this.deploymentName = deploymentName;
 	}
+
+    @Override
+    public String toString() {
+        return "RunningDeployment{" + "pid=" + pid + ", deploymentName=" + deploymentName + '}';
+    }
 	
 	
 }

@@ -55,7 +55,7 @@ public class Runner {
 
 	@PostConstruct
 	public void init() {
-		ts.createIntervalTimer(2000L, 60000L, new TimerConfig("", false));
+		ts.createIntervalTimer(2000L, 20000L, new TimerConfig("", false));
 		LOG.info("Creating central target for base URL " + srsProps.getProperty("central-url"));
 		target = ClientBuilder.newClient().register(JacksonFeature.class).target(srsProps.getProperty("central-url"));
 	}
@@ -182,7 +182,7 @@ public class Runner {
 			}
                         
                         if (!deployment.isNull("enableHz") && deployment.getBoolean("enableHz")) {
-                            String hzTemplate = new Scanner(getClass().getClassLoader().getResourceAsStream("hzconfig-template.xml")).next("\\Z");
+                            String hzTemplate = new Scanner(getClass().getClassLoader().getResourceAsStream("hzconfig-template.xml")).useDelimiter("\\Z").next().trim();
                             JsonObject hzConfiguration = deployment.getJsonObject("hzConfiguration");
                             int hzPort = hzConfiguration.getInt("port");
                             String members = deployment.getJsonArray("servers")
@@ -199,7 +199,8 @@ public class Runner {
                         commandParts.add("/usr/bin/java");
                         commandParts.add(String.format("-Xmx%dm", maxHeapSize));
                         commandParts.add(String.format("-Xms%dm", initialHeapSize));
-                        commandParts.add(String.format("-Dse.felth.deployment", deploymentName));
+                        commandParts.add(String.format("-Dse.felth.deployment=%s", deploymentName));
+                        commandParts.add("-jar");
                         commandParts.add(srsProps.get("payara-micro-path").toString());
                         commandParts.add(artifact.toString());
                         commandParts.add(addJars);
